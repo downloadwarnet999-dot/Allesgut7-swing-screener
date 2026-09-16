@@ -28,10 +28,10 @@ from output import (
 )
 
 # =====================================================================
-# TELEGRAM NOTIFICATION FUNCTION
+# TELEGRAM NOTIFICATION FUNCTION (TOP 10 TEXT + FULL HTML FILE)
 # =====================================================================
 def send_results_to_telegram(df):
-    """Sends a summary message and a sortable HTML file to Telegram."""
+    """Sends Top 10 summary (text) + full results as sortable HTML file."""
     token = os.environ.get("TELEGRAM_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
 
@@ -43,64 +43,92 @@ def send_results_to_telegram(df):
         print("  No results to send to Telegram.")
         return
 
-    # 1. Prepare Summary Text (Top 10)
-    top_10 = df.head(10)
-    summary_text = "📊 *Screener Results (Top 10)*\n\n"
-    for _, row in top_10.iterrows():
+    # ---------- 1. Summary Text (Top 10) ----------
+    df_sorted = df.sort_values(by="Score", ascending=False)
+    top_10 = df_sorted.head(10)
+
+    summary_text = f"📊 *Screener Results* — Top 10 of {len(df)} setups\n\n"
+    summary_text += "```\n"
+    summary_text += f"{'#':>2}  {'Ticker':<10} {'Setup':<18} {'Score':>5} {'Price':>8}\n"
+    summary_text += "-" * 50 + "\n"
+    for i, (_, row) in enumerate(top_10.iterrows(), start=1):
         ticker = row.get('Ticker', 'N/A')
-        setup = row.get('Setup', 'N/A')
-        score = row.get('Score', 0)
-        price = row.get('Price', 0)
-        summary_text += f"• `{ticker}` | {setup} | Score: {score:.1f} | Price: {price:.0f}\n"
+        setup  = row.get('Setup', 'N/A')
+        score  = row.get('Score', 0)
+        price  = row.get('Price', 0)
+        summary_text += f"{i:>2}  {ticker:<10} {setup:<18} {score:>5.1f} {price:>8.0f}\n"
+    summary_text += "```\n"
+    summary_text += "\n📄 *Full results in the HTML file below* — click headers to sort."
 
-    summary_text += "\n👇 *Download the full HTML file below for a sortable table.*"
-
-    # Send Summary Text
     url_text = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": summary_text, "parse_mode": "Markdown"}
     try:
-        requests.post(url_text, data=payload)
-        print("  ✅ Text summary sent to Telegram.")
+        r = requests.post(url_text, data={
+            "chat_id": chat_id,
+            "text": summary_text,
+            "parse_mode": "Markdown",
+        })
+        if r.status_code == 200:
+            print("  ✅ Text summary (Top 10) sent to Telegram.")
+        else:
+            print(f"  ❌ Text summary failed: {r.text}")
     except Exception as e:
         print(f"  ❌ Failed to send text summary: {e}")
 
-    # 2. Prepare the HTML File
-    # Sort by Score descending
-    df_sorted = df.sort_values(by="Score", ascending=False)
-    
-    # Generate HTML using DataTables for sortable headers
-    html_template = """
-    <html>
-    <head>
-        <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
-        <script type="text/javascript" src="https://code.jquery.com/jquery-3.5.1.js"></script>
-        <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
-        <script>
-            $(document).ready(function() {
-                $('#screenerTable').DataTable();
-            });
-        </script>
-    </head>
-    <body>
-        <h2>Swing Screener Results</h2>
-        {table_html}
-    </body>
-    </html>
-    """
+    # ---------- 2. Build HTML (full results, sortable) ----------
+    html_template = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Swing Screener Results</title>
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+<script type="text/javascript" src="https://code.jquery.com/jquery-3.5.1.js"></script>
+<script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<script>
+$(document).ready(function() {
+    $('#screenerTable').DataTable({
+        pageLength: 25,
+        order: [],
+        scrollX: true,
+        columnDefs: [
+            { targets: '_all', className: 'dt-center' }
+        ]
+    });
+});
+</script>
+<style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h2 { color: #333; }
+    table.display { width: 100%; }
+</style>
+</head>
+<body>
+<h2>Swing Screener Results</h2>
+<p>Total setups: <b>__TOTAL__</b> — click any column header to sort</p>
+__TABLE_HTML__
+</body>
+</html>"""
+
     table_html = df_sorted.to_html(index=False, table_id='screenerTable', classes='display')
-    html_content = html_template.format(table_html=table_html)
-    
-    # Save to a buffer
+    html_content = html_template.replace("__TOTAL__", str(len(df_sorted)))
+    html_content = html_content.replace("__TABLE_HTML__", table_html)
+
+    # Save to buffer
     html_bytes = io.BytesIO(html_content.encode('utf-8'))
     html_bytes.name = "screener_results.html"
 
-    # 3. Send the HTML File
+    # ---------- 3. Send the HTML file ----------
     url_doc = f"https://api.telegram.org/bot{token}/sendDocument"
     files = {'document': html_bytes}
-    data = {'chat_id': chat_id}
+    data = {
+        'chat_id': chat_id,
+        'caption': f'📄 Full results — {len(df_sorted)} setups (sortable HTML)'
+    }
     try:
-        requests.post(url_doc, files=files, data=data)
-        print("  ✅ HTML file sent to Telegram.")
+        r = requests.post(url_doc, files=files, data=data)
+        if r.status_code == 200:
+            print("  ✅ Full HTML file sent to Telegram.")
+        else:
+            print(f"  ❌ HTML file failed: {r.text}")
     except Exception as e:
         print(f"  ❌ Failed to send HTML file: {e}")
 
@@ -421,7 +449,7 @@ def run_screener():
     print(sep("="))
 
     # ============================================================
-    # SEND RESULTS TO TELEGRAM (NEW)
+    # SEND RESULTS TO TELEGRAM (TOP 10 TEXT + FULL HTML FILE)
     # ============================================================
     print("\n  Sending results to Telegram...")
     send_results_to_telegram(csv_df)
