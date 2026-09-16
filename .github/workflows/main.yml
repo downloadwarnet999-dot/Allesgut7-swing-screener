@@ -1,0 +1,44 @@
+name: Auto Screener & Keep Alive
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'   # Runs every 2 hours
+  workflow_dispatch:          # Allows manual trigger
+
+jobs:
+  run-screener:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Screener & Send Telegram
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          # Send test message to prove bot is alive
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "text=✅ Bot is ALIVE! Running screener..."
+          
+          # Run the actual screener
+          python main.py
+
+      - name: Keep Streamlit App Alive
+        run: |
+          curl -I https://projectbot666.streamlit.app
