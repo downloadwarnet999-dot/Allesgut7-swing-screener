@@ -8,6 +8,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 import streamlit as st
 import pandas as pd
 import numpy as np
+import io
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -819,6 +820,43 @@ def render_dashboard():
                      "Entry Zone High": st.column_config.NumberColumn("Entry High", format="%.2f"),
                      "Stop Loss": st.column_config.NumberColumn("Stop Loss", format="%.2f"),
                  })
+
+    # ===== DOWNLOAD ALL SCREENING RESULTS (DASHBOARD) =====
+    _dash_export_df = df[avail_cols].copy()
+
+    for _pcol in ["Prob(TP1)", "Prob(TP2)", "Prob(TP3)", "Prob(SL)"]:
+        if _pcol in _dash_export_df.columns:
+            _dash_export_df[_pcol] = _dash_export_df[_pcol].apply(
+                lambda x: float(str(x).rstrip('%')) if pd.notna(x) and str(x).strip() not in ('', 'None', 'nan') else None
+            )
+
+    _dash_date = datetime.now().strftime("%d%b%Y")
+
+    _dash_csv_content = _dash_export_df.to_csv(index=False)
+    _dash_csv = _dash_csv_content.encode("utf-8")
+    st.download_button(
+        label="Download All Screening Results (CSV)",
+        data=_dash_csv,
+        file_name=f"all_screening_results_{_dash_date}.csv",
+        mime="text/csv",
+        use_container_width=True,
+        key="dashboard_download_csv"
+    )
+
+    _dash_output = io.BytesIO()
+    with pd.ExcelWriter(_dash_output, engine='openpyxl') as _writer:
+        _dash_export_df.to_excel(_writer, index=False, sheet_name='All Screening Results')
+    _dash_output.seek(0)
+    st.download_button(
+        label="Download All Screening Results (Excel)",
+        data=_dash_output.getvalue(),
+        file_name=f"all_screening_results_{_dash_date}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="dashboard_download_excel"
+    )
+    # ===== END DOWNLOAD ALL SCREENING RESULTS =====
+
 
 
 # ═══════════════════════════════════════════
