@@ -1,3 +1,5 @@
+import numpy as np
+np.set_printoptions(legacy="1.25")
 import sys
 import argparse
 import os
