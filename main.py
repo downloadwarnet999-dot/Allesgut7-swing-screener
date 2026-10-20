@@ -29,7 +29,7 @@ from output import (
 )
 
 # =====================================================================
-# TELEGRAM NOTIFICATION FUNCTION (UPDATED TO SEND 2 HTML FILES)
+# TELEGRAM NOTIFICATION FUNCTION (FIXED)
 # =====================================================================
 def send_results_to_telegram(df):
     """Sends a summary message and TWO HTML files to Telegram."""
@@ -60,8 +60,11 @@ def send_results_to_telegram(df):
     url_text = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {"chat_id": chat_id, "text": summary_text, "parse_mode": "Markdown"}
     try:
-        requests.post(url_text, data=payload)
-        print("  ✅ Text summary sent to Telegram.")
+        resp = requests.post(url_text, data=payload)
+        if resp.status_code == 200:
+            print("  ✅ Text summary sent to Telegram.")
+        else:
+            print(f"  ❌ Failed to send text. Telegram Response: {resp.text}")
     except Exception as e:
         print(f"  ❌ Failed to send text summary: {e}")
 
@@ -97,35 +100,39 @@ def send_results_to_telegram(df):
     df_all = df.sort_values(by="Score", ascending=False)
     html_all = generate_html(df_all, "All Screening Results")
     bytes_all = io.BytesIO(html_all.encode('utf-8'))
-    bytes_all.name = "All_Screening_Results.html"
 
     # 3. Prepare File 2: ENTRY_READY SETUPS
     df_ready = df[df["Timing"] == "ENTRY_READY"].sort_values(by="Score", ascending=False)
     if not df_ready.empty:
         html_ready = generate_html(df_ready, "Entry Ready Swing Setups")
-        bytes_ready = io.BytesIO(html_ready.encode('utf-8'))
-        bytes_ready.name = "Entry_Ready_Setups.html"
     else:
-        # If no entry ready setups, create an empty HTML file
-        empty_html = "<html><body><h2>No Entry Ready Setups Today</h2></body></html>"
-        bytes_ready = io.BytesIO(empty_html.encode('utf-8'))
-        bytes_ready.name = "Entry_Ready_Setups.html"
+        html_ready = "<html><body><h2>No Entry Ready Setups Today</h2></body></html>"
+    
+    bytes_ready = io.BytesIO(html_ready.encode('utf-8'))
 
-    # 4. Send File 1 (All Results)
     url_doc = f"https://api.telegram.org/bot{token}/sendDocument"
+
+    # 4. Send File 1 (All Results) - FIXED FORMAT
     try:
-        requests.post(url_doc, files={'document': bytes_all}, data={'chat_id': chat_id})
-        print("  ✅ 'All Screening Results' HTML sent.")
+        files = {'document': ('All_Screening_Results.html', bytes_all, 'text/html')}
+        resp = requests.post(url_doc, files=files, data={'chat_id': chat_id})
+        if resp.status_code == 200:
+            print("  ✅ 'All Screening Results' HTML sent.")
+        else:
+            print(f"  ❌ Telegram rejected File 1. Response: {resp.text}")
     except Exception as e:
         print(f"  ❌ Failed to send All Results HTML: {e}")
 
-    # 5. Send File 2 (Entry Ready)
+    # 5. Send File 2 (Entry Ready) - FIXED FORMAT
     try:
-        requests.post(url_doc, files={'document': bytes_ready}, data={'chat_id': chat_id})
-        print("  ✅ 'Entry Ready Setups' HTML sent.")
+        files = {'document': ('Entry_Ready_Setups.html', bytes_ready, 'text/html')}
+        resp = requests.post(url_doc, files=files, data={'chat_id': chat_id})
+        if resp.status_code == 200:
+            print("  ✅ 'Entry Ready Setups' HTML sent.")
+        else:
+            print(f"  ❌ Telegram rejected File 2. Response: {resp.text}")
     except Exception as e:
         print(f"  ❌ Failed to send Entry Ready HTML: {e}")
-
 # =====================================================================
 
 def run_screener():
