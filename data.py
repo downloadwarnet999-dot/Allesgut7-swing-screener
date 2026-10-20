@@ -4,6 +4,7 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import streamlit as st # <-- TAMBAHAN WAJIB
 
 from config import (
     CACHE_DIR, CACHE_MAX_AGE_HOURS, BATCH_SIZE,
@@ -80,8 +81,6 @@ def load_ticker_cache(ticker, start=None, end=None):
             return cached_df
 
     return None
-
-
 
 
 def _find_matching_cache(ticker, start, end):
@@ -263,7 +262,11 @@ def download_tickers_batch(tickers, start=None, end=None):
 
     return downloaded_data
 
+# ==============================================================================
+# TAMBAHAN @st.cache_data DI BAWAH INI AGAR TIDAK KENA THROTTLE
+# ==============================================================================
 
+@st.cache_data(ttl=3600, show_spinner=False) # Simpan di RAM selama 1 Jam
 def get_all_market_data(tickers, start=None, end=None):
     market_data = {}
     tickers_full = []
@@ -288,7 +291,7 @@ def get_all_market_data(tickers, start=None, end=None):
 
     return market_data
 
-
+@st.cache_data(ttl=3600, show_spinner=False) # Simpan di RAM selama 1 Jam
 def get_jkse_data(force_download=False, start=None, end=None):
     parquet_path = _get_cache_path(JKSE_TICKER, start, end, "parquet")
     pkl_path = CACHE_DIR / "JKSE.pkl"
@@ -341,7 +344,7 @@ def get_jkse_data(force_download=False, start=None, end=None):
         logger.warning(f"Failed to download JKSE data: {e}")
         return None
 
-
+@st.cache_data(ttl=86400, show_spinner=False) # Simpan di RAM selama 24 Jam (Data fundamental jarang berubah)
 def get_fundamental_data(tickers, cache_dir=None):
     """Fetch and cache fundamental data for all tickers using parallel requests."""
     if cache_dir is None:
