@@ -1,5 +1,3 @@
-import numpy as np
-np.set_printoptions(legacy="1.25")
 import sys
 import argparse
 import os
@@ -12,6 +10,7 @@ warnings.filterwarnings("ignore", message=".*could not convert.*")
 warnings.filterwarnings("default", message=".*valid.*convergent.*")
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
 from config import TICKERS, SELECTED_TP, SETUP_ORDER, SIGNAL_MAP, MAX_DISPLAY, MIN_DOLLAR_VOLUME
 from data import get_all_market_data, get_jkse_data
@@ -30,10 +29,10 @@ from output import (
 )
 
 # =====================================================================
-# TELEGRAM NOTIFICATION FUNCTION (TOP 10 TEXT + FULL HTML FILE)
+# TELEGRAM NOTIFICATION FUNCTION (UPDATED TO SEND 2 HTML FILES)
 # =====================================================================
 def send_results_to_telegram(df):
-    """Sends Top 10 summary (text) + full results as sortable HTML file."""
+    """Sends a summary message and TWO HTML files to Telegram."""
     token = os.environ.get("TELEGRAM_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
 
@@ -45,94 +44,87 @@ def send_results_to_telegram(df):
         print("  No results to send to Telegram.")
         return
 
-    # ---------- 1. Summary Text (Top 10) ----------
-    df_sorted = df.sort_values(by="Score", ascending=False)
-    top_10 = df_sorted.head(10)
-
-    summary_text = f"📊 *Screener Results* — Top 10 of {len(df)} setups\n\n"
-    summary_text += "```\n"
-    summary_text += f"{'#':>2}  {'Ticker':<10} {'Setup':<18} {'Score':>5} {'Price':>8}\n"
-    summary_text += "-" * 50 + "\n"
-    for i, (_, row) in enumerate(top_10.iterrows(), start=1):
+    # 1. Prepare Summary Text (Top 10)
+    top_10 = df.head(10)
+    summary_text = "📊 *Screener Results (Top 10)*\n\n"
+    for _, row in top_10.iterrows():
         ticker = row.get('Ticker', 'N/A')
-        setup  = row.get('Setup', 'N/A')
-        score  = row.get('Score', 0)
-        price  = row.get('Price', 0)
-        summary_text += f"{i:>2}  {ticker:<10} {setup:<18} {score:>5.1f} {price:>8.0f}\n"
-    summary_text += "```\n"
-    summary_text += "\n📄 *Full results in the HTML file below* — click headers to sort."
+        setup = row.get('Setup', 'N/A')
+        score = row.get('Score', 0)
+        price = row.get('Price', 0)
+        summary_text += f"• `{ticker}` | {setup} | Score: {score:.1f} | Price: {price:.0f}\n"
 
+    summary_text += "\n👇 *2 HTML files attached below: All Results & Entry Ready setups.*"
+
+    # Send Summary Text
     url_text = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": summary_text, "parse_mode": "Markdown"}
     try:
-        r = requests.post(url_text, data={
-            "chat_id": chat_id,
-            "text": summary_text,
-            "parse_mode": "Markdown",
-        })
-        if r.status_code == 200:
-            print("  ✅ Text summary (Top 10) sent to Telegram.")
-        else:
-            print(f"  ❌ Text summary failed: {r.text}")
+        requests.post(url_text, data=payload)
+        print("  ✅ Text summary sent to Telegram.")
     except Exception as e:
         print(f"  ❌ Failed to send text summary: {e}")
 
-    # ---------- 2. Build HTML (full results, sortable) ----------
-    html_template = """<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Swing Screener Results</title>
-<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
-<script type="text/javascript" src="https://code.jquery.com/jquery-3.5.1.js"></script>
-<script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
-<script>
-$(document).ready(function() {
-    $('#screenerTable').DataTable({
-        pageLength: 25,
-        order: [],
-        scrollX: true,
-        columnDefs: [
-            { targets: '_all', className: 'dt-center' }
-        ]
-    });
-});
-</script>
-<style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    h2 { color: #333; }
-    table.display { width: 100%; }
-</style>
-</head>
-<body>
-<h2>Swing Screener Results</h2>
-<p>Total setups: <b>__TOTAL__</b> — click any column header to sort</p>
-__TABLE_HTML__
-</body>
-</html>"""
+    # Helper function to generate HTML string
+    def generate_html(df_data, title):
+        html_template = """
+        <html>
+        <head>
+            <title>{title}</title>
+            <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+            <script type="text/javascript" src="https://code.jquery.com/jquery-3.5.1.js"></script>
+            <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+            <script>
+                $(document).ready(function() {
+                    $('#screenerTable').DataTable({
+                        "lengthMenu": [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+                        "pageLength": -1
+                    });
+                });
+            </script>
+            <style> body {{ font-family: Arial; margin: 20px; }} table.display {{ width: 100%; }} </style>
+        </head>
+        <body>
+            <h2>{title}</h2>
+            {table_html}
+        </body>
+        </html>
+        """
+        table_html = df_data.to_html(index=False, table_id='screenerTable', classes='display')
+        return html_template.format(title=title, table_html=table_html)
 
-    table_html = df_sorted.to_html(index=False, table_id='screenerTable', classes='display')
-    html_content = html_template.replace("__TOTAL__", str(len(df_sorted)))
-    html_content = html_content.replace("__TABLE_HTML__", table_html)
+    # 2. Prepare File 1: ALL SCREENING RESULTS
+    df_all = df.sort_values(by="Score", ascending=False)
+    html_all = generate_html(df_all, "All Screening Results")
+    bytes_all = io.BytesIO(html_all.encode('utf-8'))
+    bytes_all.name = "All_Screening_Results.html"
 
-    # Save to buffer
-    html_bytes = io.BytesIO(html_content.encode('utf-8'))
-    html_bytes.name = "screener_results.html"
+    # 3. Prepare File 2: ENTRY_READY SETUPS
+    df_ready = df[df["Timing"] == "ENTRY_READY"].sort_values(by="Score", ascending=False)
+    if not df_ready.empty:
+        html_ready = generate_html(df_ready, "Entry Ready Swing Setups")
+        bytes_ready = io.BytesIO(html_ready.encode('utf-8'))
+        bytes_ready.name = "Entry_Ready_Setups.html"
+    else:
+        # If no entry ready setups, create an empty HTML file
+        empty_html = "<html><body><h2>No Entry Ready Setups Today</h2></body></html>"
+        bytes_ready = io.BytesIO(empty_html.encode('utf-8'))
+        bytes_ready.name = "Entry_Ready_Setups.html"
 
-    # ---------- 3. Send the HTML file ----------
+    # 4. Send File 1 (All Results)
     url_doc = f"https://api.telegram.org/bot{token}/sendDocument"
-    files = {'document': html_bytes}
-    data = {
-        'chat_id': chat_id,
-        'caption': f'📄 Full results — {len(df_sorted)} setups (sortable HTML)'
-    }
     try:
-        r = requests.post(url_doc, files=files, data=data)
-        if r.status_code == 200:
-            print("  ✅ Full HTML file sent to Telegram.")
-        else:
-            print(f"  ❌ HTML file failed: {r.text}")
+        requests.post(url_doc, files={'document': bytes_all}, data={'chat_id': chat_id})
+        print("  ✅ 'All Screening Results' HTML sent.")
     except Exception as e:
-        print(f"  ❌ Failed to send HTML file: {e}")
+        print(f"  ❌ Failed to send All Results HTML: {e}")
+
+    # 5. Send File 2 (Entry Ready)
+    try:
+        requests.post(url_doc, files={'document': bytes_ready}, data={'chat_id': chat_id})
+        print("  ✅ 'Entry Ready Setups' HTML sent.")
+    except Exception as e:
+        print(f"  ❌ Failed to send Entry Ready HTML: {e}")
 
 # =====================================================================
 
@@ -194,7 +186,6 @@ def run_screener():
             atr = last['atr_rm']
             adx = last['adx'] if pd.notna(last['adx']) else 0
 
-            # Skip penny stocks (consistent with Streamlit)
             if close < 70:
                 skipped["no_setup"] += 1
                 continue
@@ -203,23 +194,19 @@ def run_screener():
                 skipped["no_setup"] += 1
                 continue
 
-            # Volume Quality Filter
             dollar_volume = last.get('dollar_volume', 0)
             if pd.isna(dollar_volume) or dollar_volume < MIN_DOLLAR_VOLUME:
                 skipped["no_setup"] += 1
                 continue
 
-            # Basic TP/SL
             sl, tp1, tp2, tp3, profit_pct, risk_pct = calculate_tp_sl(close, atr, signal_type, adaptive_params)
 
             if sl is None or (risk_pct is not None and risk_pct < 0.1):
                 skipped["no_setup"] += 1
                 continue
 
-            # Deep analysis
             analysis = generate_deep_analysis(full, setup, close, atr, adaptive_params)
 
-            # Override TP/SL with analysis values (which include full logic)
             sl_normal = analysis["sl_normal"]
             sl_wide = analysis["sl_wide"]
             tp1_an = analysis["tp1"]
@@ -229,14 +216,13 @@ def run_screener():
             entry_zone = analysis["entry_zone"]
             timing = analysis["timing"]
             chart = analysis["chart"]
-            risk_pct = analysis["risk_pct"]  # Konsisten dengan analysis
+            risk_pct = analysis["risk_pct"]
 
             selected_tp = {"TP1": tp1_an, "TP2": tp2_an, "TP3": tp3_an}.get(SELECTED_TP)
 
             if selected_tp and close > 0:
                 profit_pct = ((selected_tp - close) / close) * 100
 
-            # Monte Carlo
             prob = simulate_tp_sl_probability(
                 df, entry_price=close, stop_loss=sl_normal,
                 tp1=tp1_an, tp2=tp2_an, tp3=tp3_an
@@ -248,13 +234,11 @@ def run_screener():
                     "AVG_DAYS_TP1": None, "AVG_DAYS_TP2": None, "AVG_DAYS_TP3": None,
                 }
 
-            # Pattern Detection
             patterns_list, pattern_meta = detect_patterns(df)
             pattern_info = get_pattern_score(patterns_list)
 
             cloud = ("ABOVE" if last.get('price_above_cloud', False) else
                      "BELOW" if last.get('price_below_cloud', False) else "INSIDE")
-            # Multi-ST consensus
             st_count = int(last.get('st_bullish_count', 0))
             trend = f"BULLISH ({st_count}/3)" if st_count >= 2 else f"BEARISH ({st_count}/3)"
 
@@ -302,7 +286,6 @@ def run_screener():
             skipped["error"] += 1
             print(f"  ERROR [{ticker}]: {e}")
 
-    # 4. Output per-ticker detail boxes
     print(sep("-"))
     print_summary(market_regime, len(market_data), len(results), skipped)
 
@@ -338,7 +321,6 @@ def run_screener():
     w_d3 = ap.get("score_w_avg_days", -0.3)
     w_pattern = ap.get("score_w_pattern", 0.5)
 
-    # Use SELECTED_TP for score calculation (consistent with displayed profit)
     tp_col = f"Prob_{SELECTED_TP}_float"
     days_col = f"Avg Days {SELECTED_TP}"
     if tp_col not in df_out.columns:
@@ -353,7 +335,7 @@ def run_screener():
         + w_d3 * df_out[days_col]
         + w_pattern * df_out["Pattern Score"]
     )
-    # Normalize score to 0-100 (matches Streamlit normalization)
+
     s_min = df_out["TP_Likelihood"].min()
     s_max = df_out["TP_Likelihood"].max()
     if s_max > s_min:
@@ -362,7 +344,6 @@ def run_screener():
         df_out["Score"] = 50.0
     df_out = df_out.sort_values("Score", ascending=False).reset_index(drop=True)
 
-    # Print detail boxes grouped by setup (from DataFrame with scores)
     print_header("DETAIL ANALYSIS")
     print(f"  Market Regime: {market_regime} | Setups found: {len(results)}")
     print()
@@ -404,9 +385,7 @@ def run_screener():
                 prob_sl=r.get("Prob(SL)", "N/A"),
             )
 
-    # Save CSV — clean columns and formatting
     def _clean_prob(val):
-        """Convert probability string like '72.5%' to float 72.5"""
         if val is None or (isinstance(val, float) and pd.isna(val)):
             return None
         s = str(val).strip().rstrip('%')
@@ -417,16 +396,13 @@ def run_screener():
 
     csv_df = df_out.copy()
 
-    # Clean probability columns
     for col in ["Prob(TP1)", "Prob(TP2)", "Prob(TP3)", "Prob(SL)"]:
         if col in csv_df.columns:
             csv_df[col] = csv_df[col].apply(_clean_prob)
 
-    # Remove internal columns
     drop_cols = ["Chart"]
     csv_df = csv_df.drop(columns=[c for c in drop_cols if c in csv_df.columns], errors="ignore")
 
-    # Curated column order
     save_cols = [
         "Ticker", "Signal", "Setup", "Score", "Price", "Stock Regime",
         "Cloud", "Trend", "ADX", "ATR",
@@ -440,7 +416,6 @@ def run_screener():
     avail_cols = [c for c in save_cols if c in csv_df.columns]
     csv_df = csv_df[avail_cols].sort_values("Score" if "Score" in csv_df.columns else avail_cols[0], ascending=False)
 
-    # Round numeric columns
     num_cols = csv_df.select_dtypes(include=["float", "float64"]).columns
     csv_df[num_cols] = csv_df[num_cols].round(2)
 
@@ -451,13 +426,12 @@ def run_screener():
     print(sep("="))
 
     # ============================================================
-    # SEND RESULTS TO TELEGRAM (TOP 10 TEXT + FULL HTML FILE)
+    # SEND RESULTS TO TELEGRAM (2 Files)
     # ============================================================
     print("\n  Sending results to Telegram...")
     send_results_to_telegram(csv_df)
     # ============================================================
 
-    # Performance: log predictions + check open trades
     try:
         from performance.realtime import (
             log_new_predictions, check_open_trades, print_performance_summary
@@ -480,7 +454,6 @@ def run_screener():
     except Exception as e:
         print(f"  [Performance] Tracking skipped: {e}")
 
-    # Interactive deep analysis
     print()
     print("  ── Interactive Deep Analysis ──")
     print("  Type a ticker for detailed analysis (candlestick, multi-tf,")
@@ -502,7 +475,6 @@ def run_screener():
             print("  (Run full scan first or check the ticker name)")
             continue
 
-        # Cek hasil screening
         screening_tickers = set(df_out["Ticker"].tolist()) if not df_out.empty else set()
         if screening_tickers and inp not in screening_tickers:
             print(f"  '{inp}' did not PASS SCREENING (no valid setup detected).")
@@ -519,7 +491,6 @@ def run_screener():
         if isinstance(df_stock.columns, pd.MultiIndex):
             df_stock.columns = df_stock.columns.get_level_values(0)
 
-        # Build market_data dict with JKSE for risk scenario
         md_for_report = dict(market_data)
         jkse_df = get_jkse_data()
         if jkse_df is not None:
@@ -537,7 +508,6 @@ def run_screener():
 
 
 def cli_analyze(ticker):
-    """Run analysis for a single ticker via CLI."""
     import yfinance as yf
     from data import normalize_yfinance_df, load_ticker_cache, save_ticker_cache
 
@@ -573,18 +543,6 @@ def cli_main():
         prog="python -m main",
         description="IDX Swing Trading Screener - AI-Powered Stock Scanner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-examples:
-  python -m main                          Run full screening 600+ saham IDX
-  python -m main --analyze BBCA.JK        Analisis mendalam 1 ticker
-  python -m main --auto-trade             Auto paper trading ke Google Sheets
-  python -m main --auto-trade --dry-run   Simulasi tanpa eksekusi
-  python -m main --auto-trade --force     Paksa retrain meski tidak ada data baru
-
-Documentation:
-  screener_v2/guide.md    User guide lengkap
-  screener_v2/readme.md   Quick start & architecture
-        """
     )
     parser.add_argument(
         "--analyze", metavar="TICKER",
