@@ -29,7 +29,7 @@ from output import (
 )
 
 # =====================================================================
-# TELEGRAM NOTIFICATION FUNCTION (FIXED)
+# TELEGRAM NOTIFICATION FUNCTION (FIXED FORMATTING BUG)
 # =====================================================================
 def send_results_to_telegram(df):
     """Sends a summary message and TWO HTML files to Telegram."""
@@ -68,7 +68,7 @@ def send_results_to_telegram(df):
     except Exception as e:
         print(f"  ❌ Failed to send text summary: {e}")
 
-    # Helper function to generate HTML string
+    # Helper function to generate HTML string (FIXED with .replace)
     def generate_html(df_data, title):
         html_template = """
         <html>
@@ -85,7 +85,7 @@ def send_results_to_telegram(df):
                     });
                 });
             </script>
-            <style> body {{ font-family: Arial; margin: 20px; }} table.display {{ width: 100%; }} </style>
+            <style> body { font-family: Arial; margin: 20px; } table.display { width: 100%; } </style>
         </head>
         <body>
             <h2>{title}</h2>
@@ -94,7 +94,11 @@ def send_results_to_telegram(df):
         </html>
         """
         table_html = df_data.to_html(index=False, table_id='screenerTable', classes='display')
-        return html_template.format(title=title, table_html=table_html)
+        
+        # Menggunakan .replace() agar tidak error saat membaca kurung kurawal di JS/CSS
+        html_template = html_template.replace("{title}", title)
+        html_template = html_template.replace("{table_html}", table_html)
+        return html_template
 
     # 2. Prepare File 1: ALL SCREENING RESULTS
     df_all = df.sort_values(by="Score", ascending=False)
@@ -112,7 +116,7 @@ def send_results_to_telegram(df):
 
     url_doc = f"https://api.telegram.org/bot{token}/sendDocument"
 
-    # 4. Send File 1 (All Results) - FIXED FORMAT
+    # 4. Send File 1 (All Results)
     try:
         files = {'document': ('All_Screening_Results.html', bytes_all, 'text/html')}
         resp = requests.post(url_doc, files=files, data={'chat_id': chat_id})
@@ -123,7 +127,7 @@ def send_results_to_telegram(df):
     except Exception as e:
         print(f"  ❌ Failed to send All Results HTML: {e}")
 
-    # 5. Send File 2 (Entry Ready) - FIXED FORMAT
+    # 5. Send File 2 (Entry Ready)
     try:
         files = {'document': ('Entry_Ready_Setups.html', bytes_ready, 'text/html')}
         resp = requests.post(url_doc, files=files, data={'chat_id': chat_id})
