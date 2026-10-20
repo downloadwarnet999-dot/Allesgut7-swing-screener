@@ -1,3 +1,4 @@
+import os  # <-- TAMBAHAN UNTUK TELEGRAM
 import numpy as np
 np.set_printoptions(legacy=False) 
 import sys
@@ -55,6 +56,9 @@ from performance.backtest import run_screening_at_date
 from rl.auto_retrain import auto_retrain, get_retrain_status
 from utils.date_utils import normalize_screen_date, safe_screen_date_str
 from utils.price_utils import round_to_tick
+
+# Import fungsi Telegram dari main.py
+from main import send_results_to_telegram
 
 # ── Page config ──
 st.set_page_config(page_title="Swing Screener v2", layout="wide", initial_sidebar_state="expanded")
@@ -632,6 +636,24 @@ def render_sidebar():
             progress.progress(100, text="Done!")
             st.success(f"Done! {len(df_out)} setups found.")
             st.caption(f"Skipped: short_data={skipped.get('short_data',0)}, no_setup={skipped.get('no_setup',0)}, errors={skipped.get('error',0)}")
+
+            # ═══════════════════════════════════════════════════════
+            # TAMBAHAN: KIRIM KE TELEGRAM OTOMATIS SETIAP KLIK
+            # ═══════════════════════════════════════════════════════
+            if not df_out.empty:
+                try:
+                    # Set environment variables from Streamlit secrets
+                    if "TELEGRAM_TOKEN" in st.secrets:
+                        os.environ["TELEGRAM_TOKEN"] = st.secrets["TELEGRAM_TOKEN"]
+                    if "TELEGRAM_CHAT_ID" in st.secrets:
+                        os.environ["TELEGRAM_CHAT_ID"] = st.secrets["TELEGRAM_CHAT_ID"]
+                    
+                    with st.spinner("📱 Mengirim file HTML ke Telegram..."):
+                        send_results_to_telegram(df_out)
+                    st.success("✅ File HTML berhasil dikirim ke Telegram!")
+                except Exception as e:
+                    st.warning(f"⚠️ Gagal kirim ke Telegram: {e}")
+            # ═══════════════════════════════════════════════════════
 
             ap = load_adaptive_config()
             if ap.get("rl_auto_retrain", True):
