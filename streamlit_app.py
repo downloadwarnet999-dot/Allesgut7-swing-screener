@@ -1,5 +1,5 @@
 import numpy as np
-np.set_printoptions(legacy="1.25")
+np.set_printoptions(legacy=False) 
 import sys
 import warnings
 warnings.filterwarnings("ignore", message=".*could not convert.*")
