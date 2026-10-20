@@ -2,7 +2,12 @@ name: Auto Screener & Keep Alive
 
 on:
   schedule:
-    - cron: '0 */2 * * *'   # Runs every 2 hours
+    # 1. Jam 12:15 WIB (05:15 UTC) - 15 menit setelah Sesi 1 tutup
+    - cron: '15 5 * * 1-5'
+    # 2. Jam 17:15 WIB (10:15 UTC) - 15 menit setelah Sesi 2 tutup
+    - cron: '15 10 * * 1-5'
+    # 3. Jam 23:00 WIB (16:00 UTC) - Final check malam
+    - cron: '0 16 * * 1-5'
   workflow_dispatch:          # Allows manual trigger
 
 jobs:
@@ -41,4 +46,5 @@ jobs:
 
       - name: Keep Streamlit App Alive
         run: |
-          curl -I https://projectbot666.streamlit.app
+          # Ping app Streamlit v2 biar ga tidur
+          curl -I https://projectbot666-v2.streamlit.app
