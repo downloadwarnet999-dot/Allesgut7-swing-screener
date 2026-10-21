@@ -29,7 +29,7 @@ from output import (
 )
 
 # =====================================================================
-# TELEGRAM NOTIFICATION FUNCTION (FIXED FORMATTING BUG)
+# TELEGRAM NOTIFICATION FUNCTION (STICKY HEADER UPDATE)
 # =====================================================================
 def send_results_to_telegram(df):
     """Sends a summary message and TWO HTML files to Telegram."""
@@ -68,7 +68,7 @@ def send_results_to_telegram(df):
     except Exception as e:
         print(f"  ❌ Failed to send text summary: {e}")
 
-    # Helper function to generate HTML string (FIXED with .replace)
+    # Helper function to generate HTML string (FIXED with .replace AND STICKY HEADER)
     def generate_html(df_data, title):
         html_template = """
         <html>
@@ -85,7 +85,19 @@ def send_results_to_telegram(df):
                     });
                 });
             </script>
-            <style> body { font-family: Arial; margin: 20px; } table.display { width: 100%; } </style>
+            <style> 
+                body { font-family: Arial; margin: 20px; } 
+                table.display { width: 100%; } 
+                
+                /* --- CSS STICKY HEADER --- */
+                #screenerTable thead th {
+                    position: sticky;
+                    top: 0;
+                    background-color: #f1f1f1 !important; /* Background solid biar teks di bawahnya ga tembus */
+                    z-index: 100; /* Memastikan header selalu di lapisan paling atas */
+                    box-shadow: 0 2px 2px -1px rgba(0,0,0,0.15); /* Sedikit bayangan biar estetik */
+                }
+            </style>
         </head>
         <body>
             <h2>{title}</h2>
