@@ -1,4 +1,4 @@
-import os  # <-- TAMBAHAN UNTUK TELEGRAM
+import os
 import numpy as np
 np.set_printoptions(legacy=False) 
 import sys
@@ -856,8 +856,9 @@ def render_dashboard():
 
     _dash_date = datetime.now().strftime("%d%b%Y")
 
+    # FIX: ganti utf-8 ke utf-8-sig biar bisa di sort pas buka Excel
     _dash_csv_content = _dash_export_df.to_csv(index=False)
-    _dash_csv = _dash_csv_content.encode("utf-8")
+    _dash_csv = _dash_csv_content.encode("utf-8-sig")
     st.download_button(
         label="Download All Screening Results (CSV)",
         data=_dash_csv,
@@ -991,9 +992,10 @@ def render_results():
 
             st.text(da['chart'])
 
-    # CSV download with clean columns
+    # CSV & EXCEL download with clean columns
     analysis_date = datetime.now().strftime("%d%b%Y")
     csv_filename = f"hasil_screener_{analysis_date}.csv"
+    excel_filename = f"hasil_screener_{analysis_date}.xlsx"
 
     # Build clean probability columns (float, not string with %)
     export_df = filtered.copy()
@@ -1027,9 +1029,21 @@ def render_results():
     num_cols = export_df.select_dtypes(include=["float", "float64"]).columns
     export_df[num_cols] = export_df[num_cols].round(2)
 
+    # FIX: CSV pakai utf-8-sig biar bisa dibaca rapi di Excel
     csv_content = export_df.to_csv(index=False)
-    csv = csv_content.encode("utf-8")
-    st.download_button("📥 Download CSV", csv, csv_filename, "text/csv", use_container_width=True)
+    csv = csv_content.encode("utf-8-sig")
+    
+    col_csv, col_excel = st.columns(2)
+    with col_csv:
+        st.download_button("📥 Download CSV (Buka di Excel)", csv, csv_filename, "text/csv", use_container_width=True)
+    
+    with col_excel:
+        # TAMBAHAN: Download Excel biar bisa langsung di-sort
+        excel_output = io.BytesIO()
+        with pd.ExcelWriter(excel_output, engine='openpyxl') as writer:
+            export_df.to_excel(writer, index=False, sheet_name='Screener Results')
+        excel_data = excel_output.getvalue()
+        st.download_button("📥 Download Excel (Bisa Langsung Sort)", excel_data, excel_filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
     # Per-Setup Top 5
     st.divider()
@@ -2154,7 +2168,7 @@ def _display_backtest_results(report, equity_curve, snapshot_dates, trades_log, 
             },
         )
 
-        csv = trades_df.to_csv(index=False).encode("utf-8")
+        csv = trades_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 Download Trade Log", csv, "backtest_trades.csv", "text/csv")
 
     # DYOR Disclaimer
@@ -2572,7 +2586,7 @@ def _display_portfolio_results(report, equity_curve, snapshot_dates, trades_log,
     trades_df = pd.DataFrame(trades_log)
     if not trades_df.empty:
         st.dataframe(trades_df, use_container_width=True, hide_index=True)
-        csv = trades_df.to_csv(index=False).encode("utf-8")
+        csv = trades_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 Download Trade Log", csv, "portfolio_trades.csv", "text/csv")
 
     # DYOR Disclaimer
